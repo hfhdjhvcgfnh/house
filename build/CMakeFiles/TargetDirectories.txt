@@ -1,0 +1,8 @@
+/home/pi/hank/chessLib/cpp/build/CMakeFiles/appchess.dir
+/home/pi/hank/chessLib/cpp/build/CMakeFiles/edit_cache.dir
+/home/pi/hank/chessLib/cpp/build/CMakeFiles/rebuild_cache.dir
+/home/pi/hank/chessLib/cpp/build/CMakeFiles/list_install_components.dir
+/home/pi/hank/chessLib/cpp/build/CMakeFiles/install.dir
+/home/pi/hank/chessLib/cpp/build/CMakeFiles/install/local.dir
+/home/pi/hank/chessLib/cpp/build/CMakeFiles/install/strip.dir
+/home/pi/hank/chessLib/cpp/build/CMakeFiles/appchess_autogen.dir

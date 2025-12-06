@@ -135,6 +135,7 @@ void MainWindow::setupUI()
     infoLayout->addWidget(algorithmLabel);
     infoLayout->addWidget(statsLabel);
     infoLayout->addStretch();
+    infoGroup->setLayout(infoLayout);
 
     rightLayout->addWidget(infoGroup);
 
