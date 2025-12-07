@@ -47,6 +47,7 @@ class ChessGUI:
 
         # 算法选择
         self.algorithm_var = tk.StringVar(value="warnsdorff")  # 默认 Warnsdorff
+        self.require_closed = True  # 是否要求闭合巡游（最后一步能跳回起点）
 
         self._setup_ui()
 
@@ -120,8 +121,11 @@ class ChessGUI:
         self.btn_next = ttk.Button(tour_control_frame, text="下一步", command=self.next_step)
         self.btn_next.grid(row=1, column=1, padx=3, pady=2, sticky="ew")
 
+        self.btn_back_to_start = ttk.Button(tour_control_frame, text="回到起点", command=self.go_to_start)
+        self.btn_back_to_start.grid(row=2, column=0, columnspan=2, padx=3, pady=2, sticky="ew")
+
         self.btn_reset = ttk.Button(tour_control_frame, text="重置", command=self.reset_board)
-        self.btn_reset.grid(row=0, column=2, rowspan=2, padx=6, pady=2, sticky="ns")
+        self.btn_reset.grid(row=0, column=2, rowspan=3, padx=6, pady=2, sticky="ns")
 
         for col in range(3):
             tour_control_frame.columnconfigure(col, weight=1)
@@ -157,13 +161,14 @@ class ChessGUI:
         self.btn_pause.config(state=tk.NORMAL if has_path and self.is_playing else tk.DISABLED)
         self.btn_prev.config(state=tk.NORMAL if has_path and not self.is_playing and not at_start else tk.DISABLED)
         self.btn_next.config(state=tk.NORMAL if has_path and not self.is_playing and not at_end else tk.DISABLED)
+        self.btn_back_to_start.config(state=tk.NORMAL if has_path and not self.is_playing and not at_start else tk.DISABLED)
         self.btn_reset.config(state=tk.NORMAL)
         self.progress_scale.config(state=tk.NORMAL if has_path else tk.DISABLED)
 
     def set_tour_controls_state(self, state):
         """临时锁定/解锁巡游相关按钮。"""
         if state == tk.DISABLED:
-            for btn in (self.btn_start, self.btn_pause, self.btn_prev, self.btn_next):
+            for btn in (self.btn_start, self.btn_pause, self.btn_prev, self.btn_next, self.btn_back_to_start):
                 btn.config(state=tk.DISABLED)
             self.progress_scale.config(state=tk.DISABLED)
         else:
@@ -203,10 +208,14 @@ class ChessGUI:
             end_time = time.time()
 
             if success:
+                # 如需闭合且可回到起点，则追加起点成为第 65 步，用绿色线收尾
+                if self.require_closed and self._is_closed_move(self.path[-1], self.start_pos):
+                    self.path.append(self.start_pos)
+                total_steps = len(self.path)
                 print(f"Path calculated in {end_time - start_time:.4f} seconds.")
-                self.lbl_info.config(text=f"起点: ({row+1}, {col+1})。路径找到（共 {len(self.path)} 步），可开始播放。")
+                self.lbl_info.config(text=f"起点: ({row+1}, {col+1})。路径找到（共 {total_steps} 步），可开始播放。")
                 self.current_path_index = 0
-                self.progress_scale.config(to=len(self.path) - 1, state=tk.NORMAL)
+                self.progress_scale.config(to=total_steps - 1, state=tk.NORMAL)
                 self.draw_current_step()
                 self.set_tour_controls_state(tk.NORMAL)
             else:
@@ -248,7 +257,7 @@ class ChessGUI:
         self.canvas.delete("knight_symbol")
         self.canvas.delete("tour_line")
         self.canvas.delete("step_number")
-        self.progress_scale.config(to=self.board_size * self.board_size - 1, state=tk.DISABLED)
+        self.progress_scale.config(to=self.board_size * self.board_size, state=tk.DISABLED)
         self.progress_scale.set(0)
         self.progress_label.config(text="步数: 0/0")
         self.lbl_info.config(text="点击棋盘选择起点")
@@ -276,6 +285,12 @@ class ChessGUI:
 
         moves_with_degree.sort(key=lambda x: (x[0], x[1].x, x[1].y))
         return [m for _, m in moves_with_degree]
+
+    def _is_closed_move(self, current_pos, start_pos):
+        """当前点是否能一步回到起点。"""
+        dx = abs(current_pos.x - start_pos.x)
+        dy = abs(current_pos.y - start_pos.y)
+        return (dx, dy) in {(1, 2), (2, 1)}
 
     def solve_knight_tour_wrapper(self):
         """根据当前选择的算法求解路径。"""
@@ -316,6 +331,9 @@ class ChessGUI:
         current_path.append(current_pos)
 
         if step_count == self.board_size * self.board_size:
+            # 闭合巡游需保证最后一步能回到起点
+            if self.require_closed and self.start_pos and not self._is_closed_move(current_pos, self.start_pos):
+                return False
             return True
 
         moves = self.get_valid_moves(current_pos, visited_board)
@@ -358,7 +376,13 @@ class ChessGUI:
         for i in range(self.current_path_index):
             p1 = self.path[i]
             p2 = self.path[i + 1]
-            self.draw_line(p1, p2, color="blue", tags="tour_line")
+            is_final_jump = (
+                self.require_closed
+                and i == len(self.path) - 2
+                and self.current_path_index == len(self.path) - 1
+            )
+            line_color = "green" if is_final_jump else "blue"
+            self.draw_line(p1, p2, color=line_color, tags="tour_line")
             cx = p1.y * self.cell_size + self.cell_size // 2
             cy = p1.x * self.cell_size + self.cell_size // 2
             self.canvas.create_text(cx, cy, text=str(i + 1), font=("Arial", 10), fill="darkblue", tags="step_number")
@@ -420,6 +444,15 @@ class ChessGUI:
             self.current_path_index -= 1
             self.draw_current_step()
             self.refresh_controls()
+
+    def go_to_start(self):
+        """跳回路径起点。"""
+        self.pause_animation()
+        if not self.path:
+            return
+        self.current_path_index = 0
+        self.draw_current_step()
+        self.refresh_controls()
 
     def on_progress_scale_change(self, value):
         if self._is_updating_progress_scale:
