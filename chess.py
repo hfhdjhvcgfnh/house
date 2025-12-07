@@ -47,7 +47,6 @@ class ChessGUI:
 
         # 算法选择
         self.algorithm_var = tk.StringVar(value="warnsdorff")  # 默认 Warnsdorff
-        self.require_closed = True  # 是否要求闭合巡游（最后一步能跳回起点）
 
         self._setup_ui()
 
@@ -209,7 +208,7 @@ class ChessGUI:
 
             if success:
                 # 如需闭合且可回到起点，则追加起点成为第 65 步，用绿色线收尾
-                if self.require_closed and self._is_closed_move(self.path[-1], self.start_pos):
+                if self._is_closed_move(self.path[-1], self.start_pos):
                     self.path.append(self.start_pos)
                 total_steps = len(self.path)
                 print(f"Path calculated in {end_time - start_time:.4f} seconds.")
@@ -292,6 +291,33 @@ class ChessGUI:
         dy = abs(current_pos.y - start_pos.y)
         return (dx, dy) in {(1, 2), (2, 1)}
 
+    def warnsdorff_greedy(self, start_pos):
+        """Warnsdorff 贪心版本，快速给出路径；失败则返回 False。"""
+        board = [[0 for _ in range(self.board_size)] for _ in range(self.board_size)]
+        path = []
+
+        current = Position(start_pos.x, start_pos.y)
+        board[current.x][current.y] = 1
+        path.append(current)
+
+        for step in range(2, self.board_size * self.board_size + 1):
+            moves = self.get_valid_moves(current, board)
+            if not moves:
+                return False, []
+
+            # 选择 Warnsdorff 度最小的下一步
+            def degree(pos):
+                return len(self.get_valid_moves(pos, board))
+
+            moves.sort(key=lambda p: (degree(p), p.x, p.y))
+            nxt = moves[0]
+
+            board[nxt.x][nxt.y] = step
+            path.append(nxt)
+            current = nxt
+
+        return True, path
+
     def solve_knight_tour_wrapper(self):
         """根据当前选择的算法求解路径。"""
         self.board_matrix = [[0 for _ in range(self.board_size)] for _ in range(self.board_size)]
@@ -303,8 +329,33 @@ class ChessGUI:
 
         current_algorithm = self.algorithm_var.get()
         start_time = time.time()
+
         if current_algorithm == "warnsdorff":
-            return self._dfs_tour(self.start_pos, 1, self.board_matrix, self.path, use_warnsdorff=True, start_time=start_time)
+            success, greedy_path = self.warnsdorff_greedy(self.start_pos)
+
+            # 贪心失败则回退到带 Warnsdorff 排序的 DFS，确保尽量找到解
+            if not success:
+                fallback_board = [[0 for _ in range(self.board_size)] for _ in range(self.board_size)]
+                fallback_path = []
+                success = self._dfs_tour(
+                    self.start_pos,
+                    1,
+                    fallback_board,
+                    fallback_path,
+                    use_warnsdorff=True,
+                    start_time=start_time,
+                    timeout=self.solve_timeout_seconds,
+                )
+                if success:
+                    self.board_matrix = fallback_board
+                    self.path = fallback_path
+                return success
+
+            self.board_matrix = [[0 for _ in range(self.board_size)] for _ in range(self.board_size)]
+            for idx, p in enumerate(greedy_path, start=1):
+                self.board_matrix[p.x][p.y] = idx
+            self.path = greedy_path
+            return True
         else:
             return self._dfs_tour(
                 self.start_pos,
@@ -331,9 +382,6 @@ class ChessGUI:
         current_path.append(current_pos)
 
         if step_count == self.board_size * self.board_size:
-            # 闭合巡游需保证最后一步能回到起点
-            if self.require_closed and self.start_pos and not self._is_closed_move(current_pos, self.start_pos):
-                return False
             return True
 
         moves = self.get_valid_moves(current_pos, visited_board)
@@ -377,9 +425,10 @@ class ChessGUI:
             p1 = self.path[i]
             p2 = self.path[i + 1]
             is_final_jump = (
-                self.require_closed
+                len(self.path) >= 2
                 and i == len(self.path) - 2
                 and self.current_path_index == len(self.path) - 1
+                and self.path[-1] == self.path[0]
             )
             line_color = "green" if is_final_jump else "blue"
             self.draw_line(p1, p2, color=line_color, tags="tour_line")
